@@ -23,38 +23,60 @@ def get_cli_arg_parser() -> ArgumentParser:
         formatter_class=ArgumentDefaultsHelpFormatter,
     )
 
-    links = parser.add_mutually_exclusive_group()
     parser.add_argument(
         "link",
         nargs="*",
-        default="library",
-        help="A product link or a list of them.",
+        help="Product links (or /d/ tokens) to download. Without links, opens an interactive library picker.",
     )
-    links.add_argument(
-        "-k",
-        "--creator",
-        nargs="*",
-        help="Download only products made by specified creators.",
-        default=None,
-    )
-    links.add_argument(
+    parser.add_argument(
         "-l",
         "--links",
         type=_is_valid_path,
-        help="A file with a list of products links.",
+        help="A file with product links, one per line.",
+    )
+    parser.add_argument(
+        "-k",
+        "--creator",
+        nargs="*",
+        help="Only show/download library products made by these creators (profile usernames).",
+        default=None,
+    )
+    library = parser.add_mutually_exclusive_group()
+    library.add_argument(
+        "--all",
+        help="Download the whole library (respecting --creator) without the picker.",
+        action="store_true",
+    )
+    library.add_argument(
+        "--list",
+        help="Print the library as a table and exit.",
+        action="store_true",
+    )
+    parser.add_argument(
+        "--zip",
+        help="Prefer Gumroad's 'Download as ZIP' archives when they are ready.",
+        action="store_true",
     )
 
+    parser.add_argument(
+        "--setup",
+        help="Interactively store your Gumroad cookies in the OS keychain via fnox, then exit.",
+        action="store_true",
+    )
     parser.add_argument(
         "--debug",
         help="Enable debug mode.",
         action="store_true",
     )
     parser.add_argument(
-        "-c",
-        "--config",
-        type=_is_valid_path,
-        help="A path to configuration INI file.",
-        default="config.ini",
+        "--folder-template",
+        help="Product folder name template (str.format syntax, see README).",
+        default="{purchase_at:%Y.%m} {product_name} ({price})",
+    )
+    parser.add_argument(
+        "--slash-replacement",
+        help="Replacement for '/' characters in folder names.",
+        default="-",
     )
     parser.add_argument(
         "-o",

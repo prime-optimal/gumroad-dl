@@ -1,1 +1,2 @@
-from .scrapper import FilesCache, GumroadScrapper, GumroadSession  # noqa: F401
+from .scrapper import GumroadScrapper, LibraryItem  # noqa: F401
+from .session import FilesCache, GumroadSession  # noqa: F401

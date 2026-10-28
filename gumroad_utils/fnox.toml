@@ -1,0 +1,10 @@
+[providers.gumroad-keychain]
+type = "keychain"
+service = "gumroad-utils"
+
+[secrets]
+GUMROAD_APP_SESSION = { provider = "gumroad-keychain", value = "GUMROAD_APP_SESSION", description = "_gumroad_app_session cookie" }
+GUMROAD_GUID = { provider = "gumroad-keychain", value = "GUMROAD_GUID", description = "_gumroad_guid cookie" }
+GUMROAD_USER_AGENT = { provider = "gumroad-keychain", value = "GUMROAD_USER_AGENT", description = "User agent of the browser the cookies came from" }
+GUMROAD_EMAIL = { provider = "gumroad-keychain", value = "GUMROAD_EMAIL", description = "Email used to purchase products" }
+GUMROAD_CF_CLEARANCE = { provider = "gumroad-keychain", value = "GUMROAD_CF_CLEARANCE", description = "cf_clearance cookie" }

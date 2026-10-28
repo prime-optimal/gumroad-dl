@@ -26,38 +26,56 @@ Download this repository either by [this link](archive/refs/heads/master.zip) or
 git clone --depth 1 https://github.com/obsessedcake/gumroad-utils.git
 ```
 
-Then install all required python packages:
+Then install it with [uv](https://docs.astral.sh/uv/). Credentials are stored with [fnox](https://fnox.jdx.dev/); [mise](https://mise.jdx.dev/) installs the pinned `uv` and `fnox` from [mise.toml](mise.toml):
 
 ```bash
-python3 -m venv .venv  # optional step
-source .venv/bin/activate  # optional step
-pip install -e .
+mise install
+uv sync  # creates .venv and installs the package in editable mode
+uv run gumroad-utils --help
+```
+
+Or install the `gumroad-utils` command globally:
+
+```bash
+uv tool install -e .
 ```
 
 ## Preparations
 
-You need to rename [config.tmpl.ini](config.tmpl.ini) into `config.ini` and put a correct data there.
+gumroad-utils signs in with the cookies of your logged-in browser session. Run the interactive setup:
 
-All cookies can be obtained from your browser's DevTools (F12) > Application > Cookies > gumroad.com:
+```bash
+gumroad-utils --setup
+```
 
-- `app_session` -> `_gumroad_app_session` cookie value,
-- `guid` -> `_gumroad_guid` cookie value,
-- `user_agent` -> your browser's user agent,
-- `email` -> the email address used to purchase products (required for Gumroad's email confirmation flow),
-- `cf_clearance` -> `cf_clearance` cookie value (required to bypass Cloudflare protection).
+It opens [gumroad.com/library](https://gumroad.com/library) and walks you through copying each value from DevTools (`⌥⌘I` on macOS, `F12` elsewhere) > **Application** > **Cookies** > `https://gumroad.com`:
 
-Please take into account that `_gumroad_app_session` and `cf_clearance` change quite often so don't be afraid that suddenly nothing works - just update them from your browser.
+![Gumroad cookies in Chrome DevTools](.imgs/devtools-cookies.png)
+
+| Prompt | Where to find it | Required |
+| --- | --- | --- |
+| `_gumroad_app_session` | cookie value | yes |
+| `_gumroad_guid` | cookie value | yes |
+| `cf_clearance` | cookie value, only listed if Cloudflare challenged your browser | no |
+| User agent | run `navigator.userAgent` in the DevTools **Console**, same browser as the cookies | yes |
+| Purchase email | the email you bought products with, used for Gumroad's email confirmation flow | no |
+
+Values go into your OS keychain (service `gumroad-utils`) via fnox; the fnox config at `~/.config/gumroad-utils/fnox.toml` only names them.
+If you run `gumroad-utils` without stored credentials in a terminal, the setup starts automatically.
+
+`_gumroad_app_session` and `cf_clearance` change quite often, so if downloads suddenly stop working, re-run `gumroad-utils --setup` and press Enter to keep the values that are still valid.
+
+Environment variables `GUMROAD_APP_SESSION`, `GUMROAD_GUID`, `GUMROAD_USER_AGENT`, `GUMROAD_EMAIL` and `GUMROAD_CF_CLEARANCE` take precedence over the keychain, e.g. for `fnox exec` or CI.
 
 ### Product folder
 
-You can customize product folder name by altering `product_folder_tmpl`.
+You can customize product folder name with `--folder-template` (default: `{purchase_at:%Y.%m} {product_name} ({price})`) and the replacement for `/` in names with `--slash-replacement` (default: `-`).
 
-`product_folder_tmpl` follow the general rules of [`str.format()`](https://docs.python.org/3/library/string.html#format-string-syntax) ([PEP 3101](https://www.python.org/dev/peps/pep-3101/)).
+The template follows the general rules of [`str.format()`](https://docs.python.org/3/library/string.html#format-string-syntax) ([PEP 3101](https://www.python.org/dev/peps/pep-3101/)).
 
 Following values currently can be used in template:
 
 - `purchase_at`: [datetime.date](https://docs.python.org/3/library/datetime.html#date-objects),
-- `uploaded_at`: [datetime.date](https://docs.python.org/3/library/datetime.html#date-objects) - only available when downloading library,
 - `product_name`: [str](https://docs.python.org/3/library/stdtypes.html#text-sequence-type-str),
 - `price`: [str](https://docs.python.org/3/library/stdtypes.html#text-sequence-type-str).
 
@@ -81,15 +99,17 @@ session = GumroadSession(
     email="my@email.com",
     cf_clearance="MyCfClearance",
 )
-files_cache = FilesCache("gumroad.cache")
+files_cache = FilesCache(Path("gumroad.cache"))
 scrapper = GumroadScrapper(
     session,
     files_cache,
     root_folder=Path.cwd(),
     product_folder_tmpl="{product_name}",
     slash_replacement="-",
+    zip_archives=False,
 )
-scrapper.scrape_library()
+for item in scrapper.fetch_library(creators={"nol3studio"}):
+    scrapper.scrap_product_page(item.url)
 ```
 
 It's also worth to mention that `GumroadScrapper` uses it's own logger instance.
@@ -97,23 +117,46 @@ Therefore if you want to configure it, you need to call [logging.basicConfig](ht
 
 ### Command Line Tool
 
-This project also exposes a simple `gumroad-utils` command that can either download your whole library or a single product.
+This project also exposes a `gumroad-utils` command.
 
-To download all products in your library, run one of below command:
+Run it without links to open an interactive picker of your library:
 
 ```bash
 gumroad-utils
-gumroad-utils -c path/to/my-config.ini -o path/to/output/directory
+gumroad-utils -o path/to/output/directory
+gumroad-utils -k nol3studio        # only products by these creators (profile usernames)
 ```
 
-To download a single product, run one of below command:
+| Key | Action |
+| --- | --- |
+| `↑` / `↓` | Move |
+| `Space` | Select / unselect the product |
+| `a` | Select / unselect every product currently shown |
+| `/` | Filter by product, variant or creator (`Esc` or `Enter` returns to the table) |
+| `Enter` | Download the selected products (or the highlighted one if nothing is selected) |
+| `Esc` / `q` | Quit without downloading |
+
+To print the library as a table instead, or to download all of it without picking:
+
+```bash
+gumroad-utils --list
+gumroad-utils --all
+gumroad-utils --all -k nol3studio
+```
+
+Without a terminal (e.g. piped output), `gumroad-utils` prints the table and downloads nothing.
+
+To download specific products, pass their links (or `/d/` tokens), or a file with one link per line:
 
 ```bash
 gumroad-utils https://app.gumroad.com/d/f0000000000000000000000000000000
 gumroad-utils f0000000000000000000000000000000
+gumroad-utils --links links.txt
 ```
 
-(`-c` and `-o` flags works the same way here.)
+By default every file is downloaded separately. With `--zip`, products that offer Gumroad's **Download all → Download as ZIP** are fetched as ZIP archives instead (one per product, or one per file group), when Gumroad has already built them; anything not covered by a ready archive is still downloaded file by file.
+
+(`-o`, `--folder-template`, `--slash-replacement` and `--zip` work the same way everywhere. The download cache `gumroad.cache` is kept in the output directory.)
 
 ![downloading](.imgs/downloading.gif)
 
