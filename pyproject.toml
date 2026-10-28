@@ -1,0 +1,49 @@
+[project]
+name = "gumroad-utils"
+version = "0.0.1"
+description = "A set of useful utils for dumping and and wiping your gumroad.com library."
+readme = "README.md"
+authors = [{ name = "Obsessed Cake", email = "obsessed-cake@proton.me" }]
+license = "GPL-3.0-only"
+license-files = ["LICENSE"]
+requires-python = ">=3.14"
+classifiers = [
+    "Natural Language :: English",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+    "Topic :: Internet",
+    "Topic :: Utilities",
+]
+dependencies = [
+    "beautifulsoup4",
+    "humanize",
+    "lxml",
+    "pathlib3x",
+    "python-dateutil",
+    "requests>=2.26.0",
+    "rich>=13.0.0",
+    "textual>=8.2.8",
+]
+
+[project.urls]
+Homepage = "https://github.com/obsessedcake"
+
+[project.scripts]
+gumroad-utils = "gumroad_utils.run:main"
+
+[dependency-groups]
+dev = [
+    "flake8",
+    "flake8-black",
+    "flake8-bugbear",
+    "flake8-isort",
+    "flake8-logging",
+]
+
+[build-system]
+requires = ["uv_build>=0.12.24,<0.13.0"]
+build-backend = "uv_build"
+
+[tool.uv.build-backend]
+module-name = "gumroad_utils"
+module-root = ""
