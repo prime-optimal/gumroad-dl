@@ -2,14 +2,20 @@ import gc
 import logging
 import signal
 import sys
-from configparser import RawConfigParser
+from argparse import Namespace
+from dataclasses import asdict
 from typing import cast
 
 from pathlib3x import Path
+from rich.console import Console
 from rich.logging import RichHandler
 
 from .cli import get_cli_arg_parser
-from .scrapper import FilesCache, GumroadScrapper, GumroadSession
+from .credentials import Credentials, CredentialsError, load_credentials
+from .onboarding import run_setup
+from .picker import LibraryPicker, print_library
+from .scrapper import GumroadScrapper
+from .session import FilesCache, GumroadSession
 
 
 def _set_sigint_handler(files_cache: FilesCache) -> None:
@@ -20,6 +26,38 @@ def _set_sigint_handler(files_cache: FilesCache) -> None:
         original_sigint_handler(signal, frame)
 
     signal.signal(signal.SIGINT, _sigint_handler)
+
+
+def _resolve_credentials() -> Credentials:
+    credentials = load_credentials()
+    if credentials.complete:
+        return credentials
+    if not sys.stdin.isatty():
+        raise CredentialsError(
+            "No Gumroad credentials found. Run `gumroad-utils --setup` in a terminal, "
+            "or set GUMROAD_APP_SESSION, GUMROAD_GUID and GUMROAD_USER_AGENT."
+        )
+    return run_setup(credentials)
+
+
+def _links_from_library(scrapper: GumroadScrapper, args: Namespace) -> list[str]:
+    console = Console()
+    creators = set(args.creator) if args.creator else None
+    with console.status("Loading your Gumroad library..."):
+        items = scrapper.fetch_library(creators)
+
+    if args.all:
+        return [item.url for item in items]
+
+    if args.list or not (sys.stdin.isatty() and sys.stdout.isatty()):
+        print_library(items, console)
+        if not args.list:
+            console.print(
+                "Not a terminal: pass links, --links FILE or --all to download."
+            )
+        return []
+
+    return [item.url for item in LibraryPicker(items).run() or []]
 
 
 def main() -> None:
@@ -38,51 +76,43 @@ def main() -> None:
     logging.getLogger("requests").setLevel(logging.WARNING)
     logging.getLogger("urllib3").setLevel(logging.WARNING)
 
-    config = RawConfigParser()
-    config.read(args.config)
+    try:
+        if args.setup:
+            run_setup(load_credentials())
+            return
+        credentials = _resolve_credentials()
+    except CredentialsError as e:
+        print(e, file=sys.stderr)
+        sys.exit(1)
 
-    session = GumroadSession(
-        app_session=config["user"]["app_session"],
-        guid=config["user"]["guid"],
-        user_agent=config["user"]["user_agent"],
-        email=config["user"].get("email", ""),
-        cf_clearance=config["user"].get("cf_clearance", ""),
-    )
-    files_cache = FilesCache(cast("Path", args.config).parent / "gumroad.cache")
+    session = GumroadSession(**asdict(credentials))
+    files_cache = FilesCache(cast("Path", args.output) / "gumroad.cache")
     scrapper = GumroadScrapper(
         session,
         files_cache,
         root_folder=args.output,
-        product_folder_tmpl=config["scrapper"]["product_folder_tmpl"],
-        slash_replacement=config["scrapper"]["slash_replacement"],
+        product_folder_tmpl=args.folder_template,
+        slash_replacement=args.slash_replacement,
+        zip_archives=args.zip,
     )
     try:
-        if isinstance(args.link, str) and (args.link == "library"):
-            links = []
-        elif isinstance(args.link, list):
-            links = args.link
-        elif args.links:
-            links = cast(Path, args.links).open().readlines()
+        links = list(args.link)
+        if args.links:
+            lines = cast(Path, args.links).read_text(encoding="utf-8").splitlines()
+            links += [line.strip() for line in lines if line.strip()]
             if not links:
-                logging.getLogger().debug("File with links is empty.")
+                logging.getLogger().warning("File with links is empty.")
                 return
 
-        if isinstance(args.creator, str):
-            creators = {args.creator}
-        elif isinstance(args.creator, list):
-            creators = set(args.creator)
-        else:
-            creators = {}
+        if not links:
+            links = _links_from_library(scrapper, args)
+            if not links:
+                return
 
-        files_cache.load()
         _set_sigint_handler(files_cache)
-
-        if links:
-            for link in links:
-                scrapper.scrap_product_page(link)
-                gc.collect()
-        else:
-            scrapper.scrape_library(creators)
+        for link in links:
+            scrapper.scrap_product_page(link)
+            gc.collect()
 
     except Exception:
         logging.getLogger().exception("")
